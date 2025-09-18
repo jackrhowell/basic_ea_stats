@@ -1,0 +1,25 @@
+---
+title: "Epifaunal Associate Stats"
+author: "Jack Howell"
+output: github_document
+---
+
+## Load Libraries
+```{r, message = FALSE}
+library(tidyverse)
+library(here)
+library(seacarb)
+library(lubridate)
+library(car)
+library(lubridateExtras)
+library(lme4)
+library(scales)
+library(ggeffects)
+library(sjPlot)
+```
+
+
+```{r}
+
+```
+
