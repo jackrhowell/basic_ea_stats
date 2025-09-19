@@ -1,11 +1,10 @@
----
-title: "Epifaunal Associate Stats"
-author: "Jack Howell"
-output: github_document
----
+Epifaunal Associate Stats
+================
+Jack Howell
 
 ## Load Libraries
-```{r, message = FALSE}
+
+``` r
 library(tidyverse)
 library(here)
 library(vegan)
@@ -22,11 +21,11 @@ library(tidytext)
 library(dplyr)
 library(tidyr)
 library(stringr)
-
 ```
 
 ## Load in Data
-```{r, message = FALSE}
+
+``` r
 df <- readr::read_csv("master.csv")
 if ("???" %in% names(df)) df <- df %>% select(-`???`)
 meta_cols <- c("Site", "Year", "Coral Colony", "Size_m")
@@ -36,8 +35,10 @@ df <- df %>%
   mutate(across(all_of(species_cols), ~ replace_na(.x, 0)))
 ```
 
-##Calculate Richness, Abundance, and Diversty metrics per row (colony level)
-```{r}
+\##Calculate Richness, Abundance, and Diversty metrics per row (colony
+level)
+
+``` r
 df_stats <- df %>%
   rowwise() %>%
   mutate(
@@ -46,12 +47,11 @@ df_stats <- df %>%
     Shannon   = vegan::diversity(c_across(all_of(species_cols)), index = "shannon")  # uses relative abundances
   ) %>%
   ungroup()
-
 ```
 
-
 ## Standard Error and Site × Year summary (mean ± SE, n)
-```{r}
+
+``` r
 #Calculates the standard Error with a Standard error functoin that can be called later
 se <- function(x) if (length(x) > 1) sd(x, na.rm = TRUE)/sqrt(sum(!is.na(x))) else 0
 
@@ -73,8 +73,25 @@ sum_sy <- df_stats %>%
 sum_sy
 ```
 
+    ## # A tibble: 36 × 9
+    ##    Site    Year     n Richness_mean Richness_se Abundance_mean Abundance_se
+    ##    <chr>  <dbl> <int>         <dbl>       <dbl>          <dbl>        <dbl>
+    ##  1 DC1000  2023   104         1.31        0.125           2.47        0.465
+    ##  2 GC852   2016    68         1.56        0.140           2.40        0.305
+    ##  3 GC852   2017    68         1.29        0.124           1.93        0.277
+    ##  4 GC852   2022    68         0.647       0.104           1.01        0.195
+    ##  5 MC036   2011    38         0.711       0.210           1.05        0.366
+    ##  6 MC036   2014    38         1.95        0.238           3.74        0.630
+    ##  7 MC036   2023    38         1.11        0.180           1.95        0.397
+    ##  8 MC294   2011    62         0.726       0.142           1.02        0.225
+    ##  9 MC294   2012    62         1.05        0.155           1.31        0.205
+    ## 10 MC294   2013    62         1.13        0.127           1.74        0.309
+    ## # ℹ 26 more rows
+    ## # ℹ 2 more variables: Shannon_mean <dbl>, Shannon_se <dbl>
+
 ## Richeness over time
-```{r}
+
+``` r
 p_rich <- ggplot(sum_sy, aes(x = as.integer(Year), y = Richness_mean, color = Site, group = Site)) +
   geom_line() +
   geom_point() +
@@ -87,9 +104,11 @@ p_rich <- ggplot(sum_sy, aes(x = as.integer(Year), y = Richness_mean, color = Si
 p_rich
 ```
 
+![](Epifaunal-Associate-Stats_files/figure-gfm/unnamed-chunk-5-1.png)<!-- -->
+
 ## Abundance over time
 
-```{r}
+``` r
 p_abun <- ggplot(sum_sy, aes(x = as.integer(Year), y = Abundance_mean, color = Site, group = Site)) +
   geom_line() +
   geom_point() +
@@ -102,9 +121,11 @@ p_abun <- ggplot(sum_sy, aes(x = as.integer(Year), y = Abundance_mean, color = S
 p_abun
 ```
 
+![](Epifaunal-Associate-Stats_files/figure-gfm/unnamed-chunk-6-1.png)<!-- -->
+
 ## Diversity over time
 
-```{r}
+``` r
 p_shan <- ggplot(sum_sy, aes(x = as.integer(Year), y = Shannon_mean, color = Site, group = Site)) +
   geom_line() +
   geom_point() +
@@ -117,9 +138,11 @@ p_shan <- ggplot(sum_sy, aes(x = as.integer(Year), y = Shannon_mean, color = Sit
 p_shan
 ```
 
-## Mean Richness, Abunadance and Diversity by Site
-```{r}
+![](Epifaunal-Associate-Stats_files/figure-gfm/unnamed-chunk-7-1.png)<!-- -->
 
+## Mean Richness, Abunadance and Diversity by Site
+
+``` r
 # helper function for SE
 se <- function(x) sd(x, na.rm = TRUE) / sqrt(sum(!is.na(x)))
 
@@ -173,10 +196,11 @@ p_shan <- ggplot(site_summary, aes(x = Site, y = mean_shan, fill = Site)) +
   plot_layout(ncol = 3)
 ```
 
-
+![](Epifaunal-Associate-Stats_files/figure-gfm/unnamed-chunk-8-1.png)<!-- -->
 
 ## Top 15 Most Abundant Species
-```{r}
+
+``` r
 species_totals <- df_stats %>%
   select(all_of(species_cols)) %>%
   summarise(across(everything(), \(x) sum(x, na.rm = TRUE))) %>%
@@ -203,8 +227,11 @@ ggplot(top15, aes(x = Species, y = Total, fill = Species)) +
     axis.text.y = element_text(size = 10)
   )
 ```
-## Top 15 Most Rich Species
-```{r}
+
+![](Epifaunal-Associate-Stats_files/figure-gfm/unnamed-chunk-9-1.png)<!-- -->
+\## Top 15 Most Rich Species
+
+``` r
 # Species "richness" here = how many colonies each species appears in (incidence)
 species_incidence <- df_stats %>%
   select(all_of(species_cols)) %>%
@@ -229,8 +256,11 @@ ggplot(top15_inc, aes(x = Species, y = Incidence, fill = Species)) +
         axis.text.y = element_text(size = 10))
 ```
 
+![](Epifaunal-Associate-Stats_files/figure-gfm/unnamed-chunk-10-1.png)<!-- -->
+
 ## Broken up by Site Most Abundant Species
-```{r}
+
+``` r
 # 0) Load or construct df_stats *earlier* in the Rmd.
 stopifnot(exists("df_stats"))
 
@@ -282,3 +312,5 @@ ggplot(top10_by_site, aes(x = Species_re, y = Total, fill = Species)) +
     strip.text = element_text(size = 12, face = "bold")
   )
 ```
+
+![](Epifaunal-Associate-Stats_files/figure-gfm/unnamed-chunk-11-1.png)<!-- -->
