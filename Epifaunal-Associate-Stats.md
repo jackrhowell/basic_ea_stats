@@ -229,7 +229,8 @@ ggplot(top15, aes(x = Species, y = Total, fill = Species)) +
 ```
 
 ![](Epifaunal-Associate-Stats_files/figure-gfm/unnamed-chunk-9-1.png)<!-- -->
-\## Top 15 Most Rich Species
+
+## Top 15 Most Rich Species
 
 ``` r
 # Species "richness" here = how many colonies each species appears in (incidence)

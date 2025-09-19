@@ -203,7 +203,9 @@ ggplot(top15, aes(x = Species, y = Total, fill = Species)) +
     axis.text.y = element_text(size = 10)
   )
 ```
+
 ## Top 15 Most Rich Species
+
 ```{r}
 # Species "richness" here = how many colonies each species appears in (incidence)
 species_incidence <- df_stats %>%
