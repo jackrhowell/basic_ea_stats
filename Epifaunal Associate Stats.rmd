@@ -8,18 +8,239 @@ output: github_document
 ```{r, message = FALSE}
 library(tidyverse)
 library(here)
+library(vegan)
 library(seacarb)
 library(lubridate)
 library(car)
-library(lubridateExtras)
 library(lme4)
 library(scales)
 library(ggeffects)
 library(sjPlot)
+library(patchwork)
+library(forcats)
+library(tidytext)
+```
+
+## Load in Data
+```{r, message = FALSE}
+df <- readr::read_csv("master.csv")
+if ("???" %in% names(df)) df <- df %>% select(-`???`)
+meta_cols <- c("Site", "Year", "Coral Colony", "Size_m")
+species_cols <- setdiff(names(df), meta_cols)
+df <- df %>%
+  mutate(across(all_of(species_cols), ~ suppressWarnings(as.numeric(.x)))) %>%
+  mutate(across(all_of(species_cols), ~ replace_na(.x, 0)))
+```
+
+##Calculate Richness, Abundance, and Diversty metrics per row (colony level)
+```{r}
+df_stats <- df %>%
+  rowwise() %>%
+  mutate(
+    Richness = sum(c_across(all_of(species_cols)) > 0, na.rm = TRUE),   # richness still counts how many species present
+    Abundance = sum(c_across(all_of(species_cols)), na.rm = TRUE),     # total counts (no > 0 here)
+    Shannon   = vegan::diversity(c_across(all_of(species_cols)), index = "shannon")  # uses relative abundances
+  ) %>%
+  ungroup()
+
 ```
 
 
+## Standard Error and Site × Year summary (mean ± SE, n)
+```{r}
+#Calculates the standard Error with a Standard error functoin that can be called later
+se <- function(x) if (length(x) > 1) sd(x, na.rm = TRUE)/sqrt(sum(!is.na(x))) else 0
+
+
+sum_sy <- df_stats %>%
+  group_by(Site, Year) %>%
+  summarise(
+    n = n(),
+    Richness_mean = mean(Richness, na.rm = TRUE),
+    Richness_se   = se(Richness),
+    Abundance_mean = mean(Abundance, na.rm = TRUE),
+    Abundance_se   = se(Abundance),
+    Shannon_mean   = mean(Shannon, na.rm = TRUE),
+    Shannon_se     = se(Shannon),
+    .groups = "drop"
+  ) %>%
+  arrange(Site, Year)
+
+sum_sy
+```
+
+## Richeness over time
+```{r}
+p_rich <- ggplot(sum_sy, aes(x = as.integer(Year), y = Richness_mean, color = Site, group = Site)) +
+  geom_line() +
+  geom_point() +
+  geom_errorbar(aes(ymin = Richness_mean - Richness_se, ymax = Richness_mean + Richness_se),
+                width = 0.15) +
+  labs(title = "Species Richness over Time by Site",
+       x = "Year", y = "Mean richness (± SE)") +
+  theme(legend.position = "right")
+
+p_rich
+```
+
+## Abundance over time
+
+```{r}
+p_abun <- ggplot(sum_sy, aes(x = as.integer(Year), y = Abundance_mean, color = Site, group = Site)) +
+  geom_line() +
+  geom_point() +
+  geom_errorbar(aes(ymin = Abundance_mean - Abundance_se, ymax = Abundance_mean + Abundance_se),
+                width = 0.15) +
+  labs(title = "Total Abundance over Time by Site",
+       x = "Year", y = "Mean abundance (± SE)") +
+  theme(legend.position = "right")
+
+p_abun
+```
+
+## Diversity over time
+
+```{r}
+p_shan <- ggplot(sum_sy, aes(x = as.integer(Year), y = Shannon_mean, color = Site, group = Site)) +
+  geom_line() +
+  geom_point() +
+  geom_errorbar(aes(ymin = Shannon_mean - Shannon_se, ymax = Shannon_mean + Shannon_se),
+                width = 0.15) +
+  labs(title = "Diversity over Time by Site",
+       x = "Year", y = "Mean Shannon (± SE)") +
+  theme(legend.position = "right")
+
+p_shan
+```
+
+## Mean Richness, Abunadance and Diversity by Site
 ```{r}
 
+# helper function for SE
+se <- function(x) sd(x, na.rm = TRUE) / sqrt(sum(!is.na(x)))
+
+# summarise all three metrics at site level
+site_summary <- df_stats %>%
+  group_by(Site) %>%
+  summarise(
+    mean_abun = mean(Abundance, na.rm = TRUE),
+    se_abun   = se(Abundance),
+    mean_rich = mean(Richness, na.rm = TRUE),
+    se_rich   = se(Richness),
+    mean_shan = mean(Shannon, na.rm = TRUE),
+    se_shan   = se(Shannon),
+    .groups = "drop"
+  )
+
+# base theme
+base_theme <- theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(size = 14, face = "bold")
+  )
+
+# Abundance
+p_abun <- ggplot(site_summary, aes(x = Site, y = mean_abun, fill = Site)) +
+  geom_col(width = 0.7) +
+  geom_errorbar(aes(ymin = mean_abun - se_abun, ymax = mean_abun + se_abun),
+                width = 0.2) +
+  labs(title = "Abundance", x = "Site", y = "Mean abundance") +
+  base_theme
+
+# Richness
+p_rich <- ggplot(site_summary, aes(x = Site, y = mean_rich, fill = Site)) +
+  geom_col(width = 0.7) +
+  geom_errorbar(aes(ymin = mean_rich - se_rich, ymax = mean_rich + se_rich),
+                width = 0.2) +
+  labs(title = "Richness", x = "Site", y = "Mean richness") +
+  base_theme
+
+# Shannon diversity
+p_shan <- ggplot(site_summary, aes(x = Site, y = mean_shan, fill = Site)) +
+  geom_col(width = 0.7) +
+  geom_errorbar(aes(ymin = mean_shan - se_shan, ymax = mean_shan + se_shan),
+                width = 0.2) +
+  labs(title = "Diversity", x = "Site", y = "Mean Diversity") +
+  base_theme
+
+# Combine with patchwork
+(p_abun | p_rich | p_shan) +
+  plot_layout(ncol = 3)
+```
+## Top 15 Most Abundant Species
+```{r}
+species_totals <- df_stats %>%
+  select(all_of(species_cols)) %>%
+  summarise(across(everything(), \(x) sum(x, na.rm = TRUE))) %>%
+  pivot_longer(cols = everything(),
+               names_to = "Species", values_to = "Total") %>%
+  filter(Total > 0) %>%                                    # drop zero-abundance
+  filter(!str_detect(Species, "Asteroschema"),
+         !str_detect(Species, "Hydrozoa")) %>%              # remove these groups
+  arrange(desc(Total)) %>%
+  mutate(Species = fct_reorder(Species, Total))
+
+# Select top 15 species after filtering
+top15 <- species_totals %>% slice_max(Total, n = 15)
+
+# Plot
+ggplot(top15, aes(x = Species, y = Total, fill = Species)) +
+  geom_col() +
+  coord_flip() +
+  labs(title = "Top 15 Most Abundant Species",
+       x = "Species", y = "Total Abundance") +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "none",
+    axis.text.y = element_text(size = 10)
+  )
+```
+## Top 15 Most Rich Species
+```{r}
+# Species "richness" here = how many colonies each species appears in (incidence)
+species_incidence <- df_stats %>%
+  select(all_of(species_cols)) %>%
+  summarise(across(everything(), \(x) sum(x > 0, na.rm = TRUE))) %>%  # <-- presence counts
+  pivot_longer(everything(), names_to = "Species", values_to = "Incidence") %>%
+  filter(Incidence > 0) %>%
+  filter(!str_detect(Species, "Asteroschema"),
+         !str_detect(Species, "Hydrozoa")) %>%
+  arrange(desc(Incidence)) %>%
+  mutate(Species = fct_reorder(Species, Incidence))
+
+# Top 15 by incidence (across all sites/years/colonies)
+top15_inc <- species_incidence %>% slice_max(Incidence, n = 15)
+
+ggplot(top15_inc, aes(x = Species, y = Incidence, fill = Species)) +
+  geom_col() +
+  coord_flip() +
+  labs(title = "Top 15 Species by Richness (excluding Asteroschema & Hydrozoa)",
+       x = "Species", y = "Number of colonies present") +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "none",
+        axis.text.y = element_text(size = 10))
+```
+## Broken up by Site Most Abundant Species
+```{r}
+top10_by_site <- species_by_site %>%
+  group_by(Site) %>%
+  slice_max(Total, n = 10) %>%
+  ungroup() %>%
+  mutate(Species_re = reorder_within(Species, Total, Site))
+
+ggplot(top10_by_site, aes(x = Species_re, y = Total, fill = Species)) +
+  geom_col() +
+  coord_flip() +
+  facet_wrap(~ Site, scales = "free_y") +
+  scale_x_reordered() +
+  labs(title = "Top 10 Most Abundant Species per Site (excl. Asteroschema & Hydrozoa)",
+       x = "Species", y = "Total abundance") +
+  theme_minimal(base_size = 13) +
+  theme(
+    legend.position = "none",
+    axis.text.y = element_text(size = 9),
+    strip.text = element_text(size = 12, face = "bold")
+  )
 ```
 
