@@ -22,7 +22,7 @@ library(tidytext)
 library(dplyr)
 library(tidyr)
 library(stringr)
-
+library(ggplot2)
 ```
 
 ## Load in Data
@@ -75,46 +75,124 @@ sum_sy
 
 ## Richeness over time
 ```{r}
-p_rich <- ggplot(sum_sy, aes(x = as.integer(Year), y = Richness_mean, color = Site, group = Site)) +
+years_per_site_same <- df_stats %>%
+  dplyr::group_by(Site) %>%
+  dplyr::summarise(n_years_site = dplyr::n_distinct(Year), .groups = "drop")
+
+colonies_in_all_years_same <- df_stats %>%
+  dplyr::group_by(Site, `Coral Colony`) %>%
+  dplyr::summarise(n_years = dplyr::n_distinct(Year), .groups = "drop") %>%
+  dplyr::inner_join(years_per_site_same, by = "Site") %>%
+  dplyr::filter(n_years == n_years_site) %>%
+  dplyr::select(Site, `Coral Colony`)
+
+## New Site × Year summary (only persistent colonies)
+sum_sy_samecolonies <- df_stats %>%
+  dplyr::semi_join(colonies_in_all_years_same, by = c("Site", "Coral Colony")) %>%
+  dplyr::group_by(Site, Year) %>%
+  dplyr::summarise(
+    n = dplyr::n(),
+    Richness_mean  = mean(Richness, na.rm = TRUE),
+    Richness_se    = se(Richness),
+    Abundance_mean = mean(Abundance, na.rm = TRUE),
+    Abundance_se   = se(Abundance),
+    Shannon_mean   = mean(Shannon, na.rm = TRUE),
+    Shannon_se     = se(Shannon),
+    .groups = "drop"
+  ) %>%
+  dplyr::arrange(Site, Year)
+
+## Plot using the same-colony summary
+p_rich_samecolonies <- ggplot(sum_sy_samecolonies,
+                              aes(x = as.integer(Year),
+                                  y = Richness_mean,
+                                  color = Site,
+                                  group = Site)) +
   geom_line() +
   geom_point() +
-  geom_errorbar(aes(ymin = Richness_mean - Richness_se, ymax = Richness_mean + Richness_se),
+  geom_errorbar(aes(ymin = Richness_mean - Richness_se,
+                    ymax = Richness_mean + Richness_se),
                 width = 0.15) +
-  labs(title = "Species Richness over Time by Site",
+  labs(title = "Species Richness over Time by Site (Same Colonies Each Year)",
        x = "Year", y = "Mean richness (± SE)") +
   theme(legend.position = "right")
 
-p_rich
-```
-
-## Abundance over time
-
-```{r}
-p_abun <- ggplot(sum_sy, aes(x = as.integer(Year), y = Abundance_mean, color = Site, group = Site)) +
-  geom_line() +
-  geom_point() +
-  geom_errorbar(aes(ymin = Abundance_mean - Abundance_se, ymax = Abundance_mean + Abundance_se),
-                width = 0.15) +
-  labs(title = "Total Abundance over Time by Site",
-       x = "Year", y = "Mean abundance (± SE)") +
-  theme(legend.position = "right")
-
-p_abun
+p_rich_samecolonies
 ```
 
 ## Diversity over time
-
 ```{r}
-p_shan <- ggplot(sum_sy, aes(x = as.integer(Year), y = Shannon_mean, color = Site, group = Site)) +
+## Plot Shannon diversity using same-colony summary
+p_shan_samecolonies <- ggplot(sum_sy_samecolonies,
+                              aes(x = as.integer(Year),
+                                  y = Shannon_mean,
+                                  color = Site,
+                                  group = Site)) +
   geom_line() +
   geom_point() +
-  geom_errorbar(aes(ymin = Shannon_mean - Shannon_se, ymax = Shannon_mean + Shannon_se),
+  geom_errorbar(aes(ymin = Shannon_mean - Shannon_se,
+                    ymax = Shannon_mean + Shannon_se),
                 width = 0.15) +
-  labs(title = "Diversity over Time by Site",
+  labs(title = "Diversity over Time by Site (Same Colonies Each Year)",
        x = "Year", y = "Mean Shannon (± SE)") +
   theme(legend.position = "right")
 
-p_shan
+p_shan_samecolonies
+```
+## Abundanceover Time
+```{r}
+p_abun_samecolonies <- ggplot(sum_sy_samecolonies,
+                              aes(x = as.integer(Year),
+                                  y = Abundance_mean,
+                                  color = Site,
+                                  group = Site)) +
+  geom_line() +
+  geom_point() +
+  geom_errorbar(aes(ymin = Abundance_mean - Abundance_se,
+                    ymax = Abundance_mean + Abundance_se),
+                width = 0.15) +
+  labs(title = "Abundance over Time by Site (Same Colonies Each Year)",
+       x = "Year", y = "Mean abundance (± SE)") +
+  theme(legend.position = "right")
+
+p_abun_samecolonies
+```
+## Yearly 
+```{r}
+# Reshape to long format: one row per Site-Year-Metric (with mean & SE)
+metrics_long_same <- sum_sy_samecolonies %>%
+  mutate(Year = as.integer(Year)) %>%
+  select(
+    Site, Year,
+    Abundance_mean, Abundance_se,
+    Richness_mean,  Richness_se,
+    Shannon_mean,   Shannon_se
+  ) %>%
+  pivot_longer(
+    cols = -c(Site, Year),
+    names_to = c("metric", "stat"),
+    names_pattern = "(Abundance|Richness|Shannon)_(mean|se)",
+    values_to = "value"
+  ) %>%
+  pivot_wider(names_from = stat, values_from = value) %>%
+  # nice metric labels
+  mutate(metric = factor(metric, levels = c("Abundance", "Richness", "Shannon"),
+                         labels = c("Abundance", "Richness", "Shannon (diversity)")))
+
+# Plot: rows = metric, columns = site; free y so each metric reads clearly
+p_site_metrics_same <- ggplot(metrics_long_same, aes(x = Year, y = mean, group = 1)) +
+  geom_line() +
+  geom_point() +
+  geom_errorbar(aes(ymin = mean - se, ymax = mean + se), width = 0.15) +
+  facet_grid(metric ~ Site, scales = "free_y") +
+  labs(
+    title = "Abundance, Richness, and Diversity over Time by Site\n(Same Colonies Each Year)",
+    x = "Year",
+    y = "Mean (± SE)"
+  ) +
+  theme(legend.position = "none")
+
+p_site_metrics_same
 ```
 
 ## Mean Richness, Abunadance and Diversity by Site
@@ -284,3 +362,30 @@ ggplot(top10_by_site, aes(x = Species_re, y = Total, fill = Species)) +
     strip.text = element_text(size = 12, face = "bold")
   )
 ```
+## Anova signifigane of Data
+```{r}
+## One-way ANOVA: Does mean Abundance differ across sites?
+anova_abun <- aov(Abundance ~ Site, data = df_stats)
+
+# Summary table
+summary(anova_abun)
+```
+```{r}
+# Residual diagnostics
+par(mfrow = c(2,2))
+plot(anova_abun)  # residuals vs fitted, Q-Q, etc.
+
+# Shapiro–Wilk test for normality of residuals
+shapiro.test(residuals(anova_abun))
+
+# Levene’s test for homogeneity of variance (car package)
+car::leveneTest(Abundance ~ Site, data = df_stats)
+```
+```{r}
+# Tukey HSD pairwise comparisons
+TukeyHSD(anova_abun)
+```
+```{r}
+kruskal.test(Abundance ~ Site, data = df_stats)
+```
+
