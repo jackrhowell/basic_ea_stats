@@ -23,6 +23,8 @@ library(dplyr)
 library(tidyr)
 library(stringr)
 library(ggplot2)
+library(ggimage)
+library(forcats)
 ```
 
 ## Load in Data
@@ -251,9 +253,31 @@ p_shan <- ggplot(site_summary, aes(x = Site, y = mean_shan, fill = Site)) +
   plot_layout(ncol = 3)
 ```
 
+```{r}
+# Path to the folder with images
+img_dir <- "/Users/flagship/Documents/uh_masters/Associate\ Research\ Master\'s\ Thesis/Hypothesis\ Testing/basic_ea_stats/Speceis"
+```
 
 
-## Top 15 Most Abundant Species
+```{r}
+# Get all .png and .jpg files (adjust as needed)
+img_files <- list.files(img_dir, pattern = "\\.(png|jpg|jpeg)$", full.names = TRUE)
+
+# Quick check
+head(img_files)
+length(img_files)
+```
+
+```{r}
+library(magick)
+
+# Read all images as a list of magick-image objects
+imgs <- lapply(img_files, image_read)
+
+```
+
+
+
 ```{r}
 species_totals <- df_stats %>%
   select(all_of(species_cols)) %>%
@@ -281,6 +305,44 @@ ggplot(top15, aes(x = Species, y = Total, fill = Species)) +
     axis.text.y = element_text(size = 10)
   )
 ```
+```{r}
+library(dplyr)
+library(stringr)
+library(ggimage)   # for image plotting inside ggplot
+
+# Example: make a tibble of species + image path
+img_tbl <- tibble(
+  Species = basename(img_files) |> str_remove("\\.png$"), # adjust extension
+  img = img_files
+)
+
+# Join with your top15
+top15 <- top15 %>%
+  left_join(img_tbl, by = "Species")
+```
+
+
+```{r}
+library(ggplot2)
+library(ggimage)
+
+ggplot(top15, aes(x = Species, y = Total, fill = Species)) +
+  geom_col() +
+  # add images to the right of each bar
+  geom_image(aes(image = img), 
+             size = 0.07,     # adjust size
+             by = "width",    # scale relative to axis
+             nudge_y = 50) +  # move them a little to the right of the bar
+  coord_flip() +
+  labs(title = "Top 15 Most Abundant Species",
+       x = "Species", y = "Total Abundance") +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "none",
+    axis.text.y = element_text(size = 10)
+  )
+```
+
 
 ## Top 15 Most Rich Species
 
@@ -353,14 +415,19 @@ ggplot(top10_by_site, aes(x = Species_re, y = Total, fill = Species)) +
   coord_flip() +
   facet_wrap(~ Site, scales = "free_y") +
   scale_x_reordered() +
-  labs(title = "Top 10 Most Abundant Species per Site (excl. Asteroschema & Hydrozoa)",
-       x = "Species", y = "Total abundance") +
-  theme_minimal(base_size = 13) +
-  theme(
-    legend.position = "none",
-    axis.text.y = element_text(size = 9),
-    strip.text = element_text(size = 12, face = "bold")
-  )
+  labs(
+  title = "Top 10 Most Abundant Species per Site\n(excl. Asteroschema & Hydrozoa)",
+  x = "Species", 
+  y = "Total abundance"
+) +
+theme_minimal(base_size = 13) +
+theme(
+  plot.title = element_text(size = 12, hjust = 0.5, lineheight = 1.1),
+  plot.title.position = "plot",
+  legend.position = "none",
+  axis.text.y = element_text(size = 9),
+  strip.text = element_text(size = 12, face = "bold")
+)
 ```
 ## Anova signifigane of Data
 ```{r}

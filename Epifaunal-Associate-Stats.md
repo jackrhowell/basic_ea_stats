@@ -21,6 +21,9 @@ library(tidytext)
 library(dplyr)
 library(tidyr)
 library(stringr)
+library(ggplot2)
+library(ggimage)
+library(forcats)
 ```
 
 ## Load in Data
@@ -92,53 +95,143 @@ sum_sy
 ## Richeness over time
 
 ``` r
-p_rich <- ggplot(sum_sy, aes(x = as.integer(Year), y = Richness_mean, color = Site, group = Site)) +
+years_per_site_same <- df_stats %>%
+  dplyr::group_by(Site) %>%
+  dplyr::summarise(n_years_site = dplyr::n_distinct(Year), .groups = "drop")
+
+colonies_in_all_years_same <- df_stats %>%
+  dplyr::group_by(Site, `Coral Colony`) %>%
+  dplyr::summarise(n_years = dplyr::n_distinct(Year), .groups = "drop") %>%
+  dplyr::inner_join(years_per_site_same, by = "Site") %>%
+  dplyr::filter(n_years == n_years_site) %>%
+  dplyr::select(Site, `Coral Colony`)
+
+## New Site × Year summary (only persistent colonies)
+sum_sy_samecolonies <- df_stats %>%
+  dplyr::semi_join(colonies_in_all_years_same, by = c("Site", "Coral Colony")) %>%
+  dplyr::group_by(Site, Year) %>%
+  dplyr::summarise(
+    n = dplyr::n(),
+    Richness_mean  = mean(Richness, na.rm = TRUE),
+    Richness_se    = se(Richness),
+    Abundance_mean = mean(Abundance, na.rm = TRUE),
+    Abundance_se   = se(Abundance),
+    Shannon_mean   = mean(Shannon, na.rm = TRUE),
+    Shannon_se     = se(Shannon),
+    .groups = "drop"
+  ) %>%
+  dplyr::arrange(Site, Year)
+
+## Plot using the same-colony summary
+p_rich_samecolonies <- ggplot(sum_sy_samecolonies,
+                              aes(x = as.integer(Year),
+                                  y = Richness_mean,
+                                  color = Site,
+                                  group = Site)) +
   geom_line() +
   geom_point() +
-  geom_errorbar(aes(ymin = Richness_mean - Richness_se, ymax = Richness_mean + Richness_se),
+  geom_errorbar(aes(ymin = Richness_mean - Richness_se,
+                    ymax = Richness_mean + Richness_se),
                 width = 0.15) +
-  labs(title = "Species Richness over Time by Site",
+  labs(title = "Species Richness over Time by Site (Same Colonies Each Year)",
        x = "Year", y = "Mean richness (± SE)") +
   theme(legend.position = "right")
 
-p_rich
+p_rich_samecolonies
 ```
 
 ![](Epifaunal-Associate-Stats_files/figure-gfm/unnamed-chunk-5-1.png)<!-- -->
 
-## Abundance over time
-
-``` r
-p_abun <- ggplot(sum_sy, aes(x = as.integer(Year), y = Abundance_mean, color = Site, group = Site)) +
-  geom_line() +
-  geom_point() +
-  geom_errorbar(aes(ymin = Abundance_mean - Abundance_se, ymax = Abundance_mean + Abundance_se),
-                width = 0.15) +
-  labs(title = "Total Abundance over Time by Site",
-       x = "Year", y = "Mean abundance (± SE)") +
-  theme(legend.position = "right")
-
-p_abun
-```
-
-![](Epifaunal-Associate-Stats_files/figure-gfm/unnamed-chunk-6-1.png)<!-- -->
-
 ## Diversity over time
 
 ``` r
-p_shan <- ggplot(sum_sy, aes(x = as.integer(Year), y = Shannon_mean, color = Site, group = Site)) +
+## Plot Shannon diversity using same-colony summary
+p_shan_samecolonies <- ggplot(sum_sy_samecolonies,
+                              aes(x = as.integer(Year),
+                                  y = Shannon_mean,
+                                  color = Site,
+                                  group = Site)) +
   geom_line() +
   geom_point() +
-  geom_errorbar(aes(ymin = Shannon_mean - Shannon_se, ymax = Shannon_mean + Shannon_se),
+  geom_errorbar(aes(ymin = Shannon_mean - Shannon_se,
+                    ymax = Shannon_mean + Shannon_se),
                 width = 0.15) +
-  labs(title = "Diversity over Time by Site",
+  labs(title = "Diversity over Time by Site (Same Colonies Each Year)",
        x = "Year", y = "Mean Shannon (± SE)") +
   theme(legend.position = "right")
 
-p_shan
+p_shan_samecolonies
+```
+
+![](Epifaunal-Associate-Stats_files/figure-gfm/unnamed-chunk-6-1.png)<!-- -->
+\## Abundanceover Time
+
+``` r
+p_abun_samecolonies <- ggplot(sum_sy_samecolonies,
+                              aes(x = as.integer(Year),
+                                  y = Abundance_mean,
+                                  color = Site,
+                                  group = Site)) +
+  geom_line() +
+  geom_point() +
+  geom_errorbar(aes(ymin = Abundance_mean - Abundance_se,
+                    ymax = Abundance_mean + Abundance_se),
+                width = 0.15) +
+  labs(title = "Abundance over Time by Site (Same Colonies Each Year)",
+       x = "Year", y = "Mean abundance (± SE)") +
+  theme(legend.position = "right")
+
+p_abun_samecolonies
 ```
 
 ![](Epifaunal-Associate-Stats_files/figure-gfm/unnamed-chunk-7-1.png)<!-- -->
+\## Yearly
+
+``` r
+# Reshape to long format: one row per Site-Year-Metric (with mean & SE)
+metrics_long_same <- sum_sy_samecolonies %>%
+  mutate(Year = as.integer(Year)) %>%
+  select(
+    Site, Year,
+    Abundance_mean, Abundance_se,
+    Richness_mean,  Richness_se,
+    Shannon_mean,   Shannon_se
+  ) %>%
+  pivot_longer(
+    cols = -c(Site, Year),
+    names_to = c("metric", "stat"),
+    names_pattern = "(Abundance|Richness|Shannon)_(mean|se)",
+    values_to = "value"
+  ) %>%
+  pivot_wider(names_from = stat, values_from = value) %>%
+  # nice metric labels
+  mutate(metric = factor(metric, levels = c("Abundance", "Richness", "Shannon"),
+                         labels = c("Abundance", "Richness", "Shannon (diversity)")))
+
+# Plot: rows = metric, columns = site; free y so each metric reads clearly
+p_site_metrics_same <- ggplot(metrics_long_same, aes(x = Year, y = mean, group = 1)) +
+  geom_line() +
+  geom_point() +
+  geom_errorbar(aes(ymin = mean - se, ymax = mean + se), width = 0.15) +
+  facet_grid(metric ~ Site, scales = "free_y") +
+  labs(
+    title = "Abundance, Richness, and Diversity over Time by Site\n(Same Colonies Each Year)",
+    x = "Year",
+    y = "Mean (± SE)"
+  ) +
+  theme(legend.position = "none")
+
+p_site_metrics_same
+```
+
+    ## `geom_line()`: Each group consists of only one observation.
+    ## ℹ Do you need to adjust the group aesthetic?
+    ## `geom_line()`: Each group consists of only one observation.
+    ## ℹ Do you need to adjust the group aesthetic?
+    ## `geom_line()`: Each group consists of only one observation.
+    ## ℹ Do you need to adjust the group aesthetic?
+
+![](Epifaunal-Associate-Stats_files/figure-gfm/unnamed-chunk-8-1.png)<!-- -->
 
 ## Mean Richness, Abunadance and Diversity by Site
 
@@ -196,9 +289,46 @@ p_shan <- ggplot(site_summary, aes(x = Site, y = mean_shan, fill = Site)) +
   plot_layout(ncol = 3)
 ```
 
-![](Epifaunal-Associate-Stats_files/figure-gfm/unnamed-chunk-8-1.png)<!-- -->
+![](Epifaunal-Associate-Stats_files/figure-gfm/unnamed-chunk-9-1.png)<!-- -->
 
-## Top 15 Most Abundant Species
+``` r
+# Path to the folder with images
+img_dir <- "/Users/flagship/Documents/uh_masters/Associate\ Research\ Master\'s\ Thesis/Hypothesis\ Testing/basic_ea_stats/Speceis"
+```
+
+``` r
+# Get all .png and .jpg files (adjust as needed)
+img_files <- list.files(img_dir, pattern = "\\.(png|jpg|jpeg)$", full.names = TRUE)
+
+# Quick check
+head(img_files)
+```
+
+    ## [1] "/Users/flagship/Documents/uh_masters/Associate Research Master's Thesis/Hypothesis Testing/basic_ea_stats/Speceis/Actiniaria sp. 1.png"   
+    ## [2] "/Users/flagship/Documents/uh_masters/Associate Research Master's Thesis/Hypothesis Testing/basic_ea_stats/Speceis/Actiniaria sp. 3.png"   
+    ## [3] "/Users/flagship/Documents/uh_masters/Associate Research Master's Thesis/Hypothesis Testing/basic_ea_stats/Speceis/Amathillopsis sp. ?.png"
+    ## [4] "/Users/flagship/Documents/uh_masters/Associate Research Master's Thesis/Hypothesis Testing/basic_ea_stats/Speceis/Amphipoda sp. 2.png"    
+    ## [5] "/Users/flagship/Documents/uh_masters/Associate Research Master's Thesis/Hypothesis Testing/basic_ea_stats/Speceis/Amphipoda sp. hy.png"   
+    ## [6] "/Users/flagship/Documents/uh_masters/Associate Research Master's Thesis/Hypothesis Testing/basic_ea_stats/Speceis/Anamenia sp. 1.png"
+
+``` r
+length(img_files)
+```
+
+    ## [1] 15
+
+``` r
+library(magick)
+```
+
+    ## Linking to ImageMagick 6.9.13.29
+    ## Enabled features: cairo, fontconfig, freetype, heic, lcms, pango, raw, rsvg, webp
+    ## Disabled features: fftw, ghostscript, x11
+
+``` r
+# Read all images as a list of magick-image objects
+imgs <- lapply(img_files, image_read)
+```
 
 ``` r
 species_totals <- df_stats %>%
@@ -228,7 +358,46 @@ ggplot(top15, aes(x = Species, y = Total, fill = Species)) +
   )
 ```
 
-![](Epifaunal-Associate-Stats_files/figure-gfm/unnamed-chunk-9-1.png)<!-- -->
+![](Epifaunal-Associate-Stats_files/figure-gfm/unnamed-chunk-13-1.png)<!-- -->
+
+``` r
+library(dplyr)
+library(stringr)
+library(ggimage)   # for image plotting inside ggplot
+
+# Example: make a tibble of species + image path
+img_tbl <- tibble(
+  Species = basename(img_files) |> str_remove("\\.png$"), # adjust extension
+  img = img_files
+)
+
+# Join with your top15
+top15 <- top15 %>%
+  left_join(img_tbl, by = "Species")
+```
+
+``` r
+library(ggplot2)
+library(ggimage)
+
+ggplot(top15, aes(x = Species, y = Total, fill = Species)) +
+  geom_col() +
+  # add images to the right of each bar
+  geom_image(aes(image = img), 
+             size = 0.07,     # adjust size
+             by = "width",    # scale relative to axis
+             nudge_y = 50) +  # move them a little to the right of the bar
+  coord_flip() +
+  labs(title = "Top 15 Most Abundant Species",
+       x = "Species", y = "Total Abundance") +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "none",
+    axis.text.y = element_text(size = 10)
+  )
+```
+
+![](Epifaunal-Associate-Stats_files/figure-gfm/unnamed-chunk-15-1.png)<!-- -->
 
 ## Top 15 Most Rich Species
 
@@ -257,7 +426,7 @@ ggplot(top15_inc, aes(x = Species, y = Incidence, fill = Species)) +
         axis.text.y = element_text(size = 10))
 ```
 
-![](Epifaunal-Associate-Stats_files/figure-gfm/unnamed-chunk-10-1.png)<!-- -->
+![](Epifaunal-Associate-Stats_files/figure-gfm/unnamed-chunk-16-1.png)<!-- -->
 
 ## Broken up by Site Most Abundant Species
 
@@ -304,14 +473,106 @@ ggplot(top10_by_site, aes(x = Species_re, y = Total, fill = Species)) +
   coord_flip() +
   facet_wrap(~ Site, scales = "free_y") +
   scale_x_reordered() +
-  labs(title = "Top 10 Most Abundant Species per Site (excl. Asteroschema & Hydrozoa)",
-       x = "Species", y = "Total abundance") +
-  theme_minimal(base_size = 13) +
-  theme(
-    legend.position = "none",
-    axis.text.y = element_text(size = 9),
-    strip.text = element_text(size = 12, face = "bold")
-  )
+  labs(
+  title = "Top 10 Most Abundant Species per Site\n(excl. Asteroschema & Hydrozoa)",
+  x = "Species", 
+  y = "Total abundance"
+) +
+theme_minimal(base_size = 13) +
+theme(
+  plot.title = element_text(size = 12, hjust = 0.5, lineheight = 1.1),
+  plot.title.position = "plot",
+  legend.position = "none",
+  axis.text.y = element_text(size = 9),
+  strip.text = element_text(size = 12, face = "bold")
+)
 ```
 
-![](Epifaunal-Associate-Stats_files/figure-gfm/unnamed-chunk-11-1.png)<!-- -->
+![](Epifaunal-Associate-Stats_files/figure-gfm/unnamed-chunk-17-1.png)<!-- -->
+\## Anova signifigane of Data
+
+``` r
+## One-way ANOVA: Does mean Abundance differ across sites?
+anova_abun <- aov(Abundance ~ Site, data = df_stats)
+
+# Summary table
+summary(anova_abun)
+```
+
+    ##               Df Sum Sq Mean Sq F value Pr(>F)    
+    ## Site           5    542   108.4   24.09 <2e-16 ***
+    ## Residuals   3274  14730     4.5                   
+    ## ---
+    ## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+``` r
+# Residual diagnostics
+par(mfrow = c(2,2))
+plot(anova_abun)  # residuals vs fitted, Q-Q, etc.
+```
+
+![](Epifaunal-Associate-Stats_files/figure-gfm/unnamed-chunk-19-1.png)<!-- -->
+
+``` r
+# Shapiro–Wilk test for normality of residuals
+shapiro.test(residuals(anova_abun))
+```
+
+    ## 
+    ##  Shapiro-Wilk normality test
+    ## 
+    ## data:  residuals(anova_abun)
+    ## W = 0.64778, p-value < 2.2e-16
+
+``` r
+# Levene’s test for homogeneity of variance (car package)
+car::leveneTest(Abundance ~ Site, data = df_stats)
+```
+
+    ## Warning in leveneTest.default(y = y, group = group, ...): group coerced to
+    ## factor.
+
+    ## Levene's Test for Homogeneity of Variance (center = median)
+    ##         Df F value    Pr(>F)    
+    ## group    5  15.244 7.753e-15 ***
+    ##       3274                      
+    ## ---
+    ## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+``` r
+# Tukey HSD pairwise comparisons
+TukeyHSD(anova_abun)
+```
+
+    ##   Tukey multiple comparisons of means
+    ##     95% family-wise confidence level
+    ## 
+    ## Fit: aov(formula = Abundance ~ Site, data = df_stats)
+    ## 
+    ## $Site
+    ##                    diff        lwr         upr     p adj
+    ## GC852-DC1000 -0.6917421 -1.4204631  0.03697898 0.0741456
+    ## MC036-DC1000 -0.2255398 -1.0456588  0.59457918 0.9702613
+    ## MC294-DC1000 -1.0643438 -1.7103147 -0.41837293 0.0000402
+    ## MC297-DC1000 -1.4682692 -2.0902793 -0.84625920 0.0000000
+    ## MC344-DC1000 -1.5798840 -2.1969377 -0.96283031 0.0000000
+    ## MC036-GC852   0.4662023 -0.2410328  1.17343731 0.4149285
+    ## MC294-GC852  -0.3726017 -0.8674397  0.12223624 0.2634059
+    ## MC297-GC852  -0.7765271 -1.2396499 -0.31340436 0.0000269
+    ## MC344-GC852  -0.8881419 -1.3445863 -0.43169751 0.0000005
+    ## MC294-MC036  -0.8388040 -1.4604352 -0.21717277 0.0016933
+    ## MC297-MC036  -1.2427294 -1.8394232 -0.64603562 0.0000000
+    ## MC344-MC036  -1.3543442 -1.9458696 -0.76281881 0.0000000
+    ## MC297-MC294  -0.4039254 -0.7213001 -0.08655070 0.0039174
+    ## MC344-MC294  -0.5155402 -0.8230878 -0.20799264 0.0000270
+    ## MC344-MC297  -0.1116148 -0.3649991  0.14176952 0.8088311
+
+``` r
+kruskal.test(Abundance ~ Site, data = df_stats)
+```
+
+    ## 
+    ##  Kruskal-Wallis rank sum test
+    ## 
+    ## data:  Abundance by Site
+    ## Kruskal-Wallis chi-squared = 186.8, df = 5, p-value < 2.2e-16
