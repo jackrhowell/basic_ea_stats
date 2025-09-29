@@ -343,6 +343,29 @@ ggplot(top15, aes(x = Species, y = Total, fill = Species)) +
   )
 ```
 
+```{r}
+library(ggimage)
+
+ggplot(top15, aes(x = Total, y = Species, fill = Species)) +
+  geom_col() +
+  # put images at each Species row, offset left
+  geom_image(
+    aes(y = Species, image = img),
+    x = -0.06 * max(top15$Total),   # fixed x offset for all images
+    size = 0.16,
+    by = "height"
+  ) +
+  scale_x_continuous(expand = expansion(mult = c(0.15, 0.02))) +
+  labs(title = "Top 15 Most Abundant Species",
+       x = "Total Abundance", y = NULL) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "none",
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank()
+  )
+```
+
 
 ## Top 15 Most Rich Species
 
